@@ -92,12 +92,19 @@ RCT_EXPORT_METHOD(complete:(NSNumber *_Nonnull)status promiseWithResolver:(RCTPr
 
     if (@available(iOS 12.0, *)) {
         [supportedNetworksMapping setObject:PKPaymentNetworkMaestro forKey:@"maestro"];
+
+    }
+
+    if (@available(iOS 12.1.1, *)) {
+        [supportedNetworksMapping setObject:PKPaymentNetworkMada forKey:@"mada"];
     }
 
     NSArray *supportedNetworksProp = props[@"supportedNetworks"];
     NSMutableArray *supportedNetworks = [NSMutableArray array];
     for (NSString *supportedNetwork in supportedNetworksProp) {
-        [supportedNetworks addObject: supportedNetworksMapping[supportedNetwork]];
+        if(supportedNetworksMapping[supportedNetwork] != nil){
+            [supportedNetworks addObject: supportedNetworksMapping[supportedNetwork]];
+        }
     }
 
     return supportedNetworks;
@@ -125,46 +132,37 @@ RCT_EXPORT_METHOD(complete:(NSNumber *_Nonnull)status promiseWithResolver:(RCTPr
 {
     self.completion = completion;
     if (self.requestPaymentResolve != NULL) {
-        NSString *transactionId = payment.token.transactionIdentifier;
-
-        NSError *error;
-        id jsonObject = [NSJSONSerialization JSONObjectWithData:payment.token.paymentData options:0 error:&error];
-
-        NSMutableDictionary *paymentMethod = [[NSMutableDictionary alloc]initWithCapacity:3];
-        if (@available(iOS 9.0, *)) {
-            [paymentMethod setObject:payment.token.paymentMethod.displayName forKey:@"displayName"];
-            [paymentMethod setObject:payment.token.paymentMethod.network forKey:@"network"];
-            NSString *cardType = NULL;
-            switch (payment.token.paymentMethod.type) {
-                case 0:
-                    cardType = @"unknown";
-                    break;
-                case 1:
-                    cardType = @"debit";
-                    break;
-                case 2:
-                    cardType = @"credit";
-                    break;
-                case 3:
-                    cardType = @"prepaid";
-                    break;
-                case 4:
-                    cardType = @"store";
-                    break;
-            }
-
-            [paymentMethod setObject:cardType forKey:@"type"];
-        } else {
-            // Fallback on earlier versions
+        NSString *paymentData = [[NSString alloc] initWithData:payment.token.paymentData encoding:NSUTF8StringEncoding];
+        NSMutableDictionary *paymentResponse = [[NSMutableDictionary alloc]initWithCapacity:4];
+        [paymentResponse setObject:paymentData forKey:@"paymentData"];
+        [paymentResponse setObject:payment.token.transactionIdentifier forKey:@"transactionId"];
+        [paymentResponse setObject:payment.token.paymentMethod.displayName forKey:@"displayName"];
+        [paymentResponse setObject:payment.token.paymentMethod.network forKey:@"network"];
+        NSString *type = nil;
+        switch (payment.token.paymentMethod.type) {
+            case PKPaymentMethodTypeDebit:
+                type = @"debit";
+                break;
+                case PKPaymentMethodTypeStore:
+                type = @"store";
+                break;
+                case PKPaymentMethodTypeCredit:
+                type = @"credit";
+                break;
+                case PKPaymentMethodTypePrepaid:
+                type = @"prepaid";
+                break;
+                case PKPaymentMethodTypeUnknown:
+                type = @"unknown";
+                break;
+            default:
+                break;
         }
-        NSMutableDictionary *paymentResponse = [[NSMutableDictionary alloc]initWithCapacity:3];
-        [paymentResponse setObject:transactionId forKey:@"transactionIdentifier"];
-        [paymentResponse setObject:jsonObject forKey:@"paymentData"];
-        [paymentResponse setObject:paymentMethod forKey:@"paymentMethod"];
+        [paymentResponse setObject:type forKey:@"type"];
+        NSError *error;
+        NSData *json = [NSJSONSerialization dataWithJSONObject:paymentResponse options:NSJSONWritingPrettyPrinted error: &error];
 
-        NSData *requestData = [NSJSONSerialization dataWithJSONObject:paymentResponse options:0 error:nil];
-        NSString* json = [[NSString alloc] initWithData:requestData encoding:NSUTF8StringEncoding];
-        self.requestPaymentResolve(json);
+        self.requestPaymentResolve([[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding]);
         self.requestPaymentResolve = NULL;
     }
 }
@@ -175,6 +173,10 @@ RCT_EXPORT_METHOD(complete:(NSNumber *_Nonnull)status promiseWithResolver:(RCTPr
             if (self.completeResolve != NULL) {
                 self.completeResolve(nil);
                 self.completeResolve = NULL;
+            }
+            if (self.requestPaymentResolve != NULL) {
+                self.requestPaymentResolve(nil);
+                self.requestPaymentResolve = NULL;
             }
         }];
     });
